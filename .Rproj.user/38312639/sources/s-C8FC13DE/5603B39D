@@ -1,0 +1,27 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1587293706243.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "5603B39D",
+    "lastKnownWriteTime" : 1587355682,
+    "last_content_update" : 1587355682296,
+    "path" : "D:/Dataprojects/Natural_Language_Processing_Soumendu_da/Text Mining in R/chapter2.Rmd",
+    "project_path" : "Text Mining in R/chapter2.Rmd",
+    "properties" : {
+        "chunk_output_type" : "console",
+        "cursorPosition" : "373,0",
+        "scrollLine" : "364",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 3,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

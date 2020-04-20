@@ -1,0 +1,8 @@
+base
+stringr
+tidytext
+readr
+dplyr
+ggplot2
+Matrix
+e1071

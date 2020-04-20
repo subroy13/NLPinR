@@ -1,0 +1,9 @@
+base
+stringr
+tidytext
+dplyr
+gutenbergr
+ggplot2
+plotly
+RColorBrewer
+wordcloud
