@@ -6,3 +6,7 @@ dplyr
 ggplot2
 Matrix
 e1071
+rpart
+rpart.plot
+randomForest
+topicmodels

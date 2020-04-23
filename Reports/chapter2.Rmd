@@ -272,7 +272,6 @@ dim(train_doc)
 ```
 
 We see that there are now $277$ speeches, and $197$ words in the training set. Similarly, in testing set, we have $76$ speeches. 
-
 ```{r}
 red_testdata <- rbind(red_testdata, tibble(word = red_words, date = NA, n = 0, tf = 0, idf = 0, tf_idf = 0, president = NA, party = NA) )
 
@@ -325,8 +324,13 @@ classification_report <- function(True_labels, Predicted_labels){
 
 ```{r}
 fit.LDA <- MASS::lda(train_doc, factor(training_labels))
-preds <- predict(fit.LDA, newdata = test_doc)
 
+# in training set
+preds <- predict(fit.LDA, newdata = train_doc)
+classification_report(training_labels, preds$class)
+
+# in testing set
+preds <- predict(fit.LDA, newdata = test_doc)
 classification_report(testing_labels, preds$class)
 ```
 
@@ -335,12 +339,15 @@ classification_report(testing_labels, preds$class)
 
 ```{r}
 library(e1071)
-
 fit.NB <- naiveBayes(x = as.matrix(train_doc), y = factor(training_labels))
+
+# in training set
+preds <- predict(fit.NB, newdata = as.matrix(train_doc))
+classification_report(training_labels, preds)
+
+# in testing set
 preds <- predict(fit.NB, newdata = as.matrix(test_doc))
-
 classification_report(testing_labels, preds)
-
 ```
 
 
@@ -349,7 +356,13 @@ classification_report(testing_labels, preds)
 We first use polynomial Kernels.
 
 ```{r}
-fit.SVM.poly <- svm(x = as.matrix(train_doc), y = factor(training_labels), kernel = "polynomial")
+fit.SVM.poly <- svm(x = as.matrix(train_doc), y = factor(training_labels), kernel = "polynomial", cost = 3)
+
+# in training set
+preds <- predict(fit.SVM.poly, newdata = as.matrix(train_doc))
+classification_report(training_labels, preds)
+
+# in testing set
 preds <- predict(fit.SVM.poly, newdata = as.matrix(test_doc))
 classification_report(testing_labels, preds)
 ```
@@ -357,7 +370,13 @@ classification_report(testing_labels, preds)
 Next, we use SVM with Gaussian (or radial basis) kernel.
 
 ```{r}
-fit.SVM.radial <- svm(x = as.matrix(train_doc), y = factor(training_labels), kernel = "radial")
+fit.SVM.radial <- svm(x = as.matrix(train_doc), y = factor(training_labels), kernel = "radial", cost = 2)
+
+# in training set
+preds <- predict(fit.SVM.radial, newdata = as.matrix(train_doc))
+classification_report(training_labels, preds)
+
+# in testing set
 preds <- predict(fit.SVM.radial, newdata = as.matrix(test_doc))
 classification_report(testing_labels, preds)
 ```
@@ -366,13 +385,410 @@ Finally, using Sigmoid kernel.
 
 ```{r}
 fit.SVM.sigmoid <- svm(x = as.matrix(train_doc), y = factor(training_labels), kernel = "sigmoid")
+
+# in training set
+preds <- predict(fit.SVM.sigmoid, newdata = as.matrix(train_doc))
+classification_report(training_labels, preds)
+
+# in testing set
 preds <- predict(fit.SVM.sigmoid, newdata = as.matrix(test_doc))
 classification_report(testing_labels, preds)
 ```
 
+### Performance of CART
+
+Now, we use Classification And Regression Tree (CART). The fitted decision tree looks as follows.
+
+```{r fig.height = 10, fig.width=10}
+library(rpart)
+library(rpart.plot)
+
+fit.CART <- rpart(LABEL ~ . , data = cbind(as.data.frame(as.matrix(train_doc)), LABEL = factor(training_labels)), 
+                  method = "class", minsplit = 10)
+rpart.plot(fit.CART)
+```
+
+```{r}
+# in training set
+preds <- predict(fit.CART, type = "class")
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.CART, newdata = as.data.frame(as.matrix(test_doc)), type = "class")
+classification_report(testing_labels, preds)
+
+```
+
+### Performance of Random Forest
+
+Finally, we try training Random Forest classifier. Although, since CART did not perform well, it seems that Random Forest will fail too.
+
+```{r}
+library(randomForest)
+fit.rf <- randomForest(x = as.matrix(train_doc), y = factor(training_labels))
+```
+
+Next, we wish to see which of the words it found to be important in discriminating.
+
+```{r}
+varImpPlot(fit.rf, n.var = 15)
+
+# accuracy in training set
+preds <- predict(fit.rf)
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.rf, newdata = as.matrix(test_doc))
+classification_report(testing_labels, preds)
+```
+
+
+## Using Latent Semantic Analysis
+
+```{r echo = FALSE, eval = FALSE}
+# this is just for convenience
+load('../datasets/US_president_ML_parts/train_test.Rdata')
+```
+
+We first convert the train dataset from dataframe to a sparse term document matrix.
+
+```{r}
+train_doc <- traindata %>% cast_sparse(date, word, n)
+```
+
+Now, we perform LSA on this training document term matrix. This would give us a representation; $X \approx U \Sigma V^T$, which is the singular value decomposition. Restricting $\Sigma$ to be a $k\times k$ matrix, which is very low compared to number of documents or number of words. Then, we can create a new representations for each document using; $\hat{d}_i = \Sigma^{-1}V^T d_i$. This new representation becomes the features of the document.
+
+To understand these features with the words, we link it using $\tilde{t}_i = \Sigma^{-1}U^T t_i$. These $\tilde{t}_i$'s are called Pseudo-terms, which are basically some linear combination of the words, possibly referring to different topics. For this, we shall choose $10$ latent topics.
+
+
+```{r}
+n_topic <- 10
+lsa.fit <- svd(train_doc, nu = n_topic, nv = n_topic)  # obtain the SVD decomposition
+```
+
+Before proceeding with the classification, let us see how these 10 topics are related with the terms. For this, we consider top 10 words with highest magnitude of coefficients in $V$ matrix, corresponding to each topic.
+
+```{r}
+rownames(lsa.fit$v) <- colnames(train_doc)
+
+# just a simple for loop, using with apply
+topic_mat <- apply(abs(lsa.fit$v), 2, function(x) {names(sort(x, decreasing = T)[1:10])} )
+topic_mat <- t(topic_mat)  # transpose it so that row-wise we have topics, and columns are the words
+rownames(topic_mat) <- paste("Topic", 1:n_topic)
+colnames(topic_mat) <- paste("Word", 1:10)
+
+as.data.frame(topic_mat)
+```
+
+
+Now, we apply the required transformation, to obtain the transformed training and testing document matrix.
+
+```{r}
+new_traindoc <- train_doc %*% lsa.fit$v %*% (diag(1 / lsa.fit$d[1:n_topic]))
+
+# we add a dummy document containing all the words from training set
+testdata <- testdata %>% filter(word %in% colnames(train_doc)) %>% 
+  rbind( tibble(word = colnames(train_doc), date = NA, n = 0, tf = 0, idf = 0, tf_idf = 0, president = NA, party = NA) )
+  
+test_doc <- testdata %>% cast_sparse(date, word, n)
+test_doc <- test_doc[-nrow(test_doc), ]   # the last document is dummy one
+ 
+new_testdoc <- test_doc %*% lsa.fit$v %*% (diag(1 / lsa.fit$d[1:n_topic]))
+
+# finally add some column names
+colnames(new_traindoc) <- colnames(new_testdoc) <- paste("Topic", 1:n_topic)
+```
+
+Now, we are ready to apply our classification algorithms once again, when we prepare the training and testing labels for these new set of documents.
+
+```{r}
+training_labels <- party_names[rownames(train_doc)]
+testing_labels <- party_names[rownames(test_doc)]
+```
+
+### Performance of Linear Discriminant Analysis
+
+```{r}
+fit.LDA <- MASS::lda(new_traindoc, factor(training_labels))
+
+# in training set
+preds <- predict(fit.LDA, newdata = new_traindoc)
+classification_report(training_labels, preds$class)
+
+# in testing set
+preds <- predict(fit.LDA, newdata = new_testdoc)
+classification_report(testing_labels, preds$class)
+```
+
+### Performance of Naive Bayes Classifier
+
+```{r}
+fit.NB <- naiveBayes(x = as.matrix(new_traindoc), y = factor(training_labels))
+
+# in training set
+preds <- predict(fit.NB, newdata = as.matrix(new_traindoc))
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.NB, newdata = as.matrix(new_testdoc))
+classification_report(testing_labels, preds)
+```
+
+
+### Performance of Support Vector Machine
+
+We first use polynomial Kernels.
+
+```{r}
+fit.SVM.poly <- svm(x = as.matrix(new_traindoc), y = factor(training_labels), kernel = "polynomial", degree = 20)
+
+# in training set
+preds <- predict(fit.SVM.poly, newdata = as.matrix(new_traindoc))
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.SVM.poly, newdata = as.matrix(new_testdoc))
+classification_report(testing_labels, preds)
+```
+
+Next, we use SVM with Gaussian (or radial basis) kernel.
+
+```{r}
+fit.SVM.radial <- svm(x = as.matrix(new_traindoc), y = factor(training_labels), kernel = "radial", cost = 2)
+
+# in training set
+preds <- predict(fit.SVM.radial, newdata = as.matrix(new_traindoc))
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.SVM.radial, newdata = as.matrix(new_testdoc))
+classification_report(testing_labels, preds)
+```
+
+Finally, using Sigmoid kernel.
+
+```{r}
+fit.SVM.sigmoid <- svm(x = as.matrix(new_traindoc), y = factor(training_labels), kernel = "sigmoid")
+
+# in training set
+preds <- predict(fit.SVM.sigmoid, newdata = as.matrix(new_traindoc))
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.SVM.sigmoid, newdata = as.matrix(new_testdoc))
+classification_report(testing_labels, preds)
+```
+
+### Performance of CART
+
+Now, we use Classification And Regression Tree (CART). The fitted decision tree looks as follows.
+
+```{r fig.height = 10, fig.width=10}
+fit.CART <- rpart(LABEL ~ . , data = cbind(as.data.frame(as.matrix(new_traindoc)), LABEL = factor(training_labels)), 
+                  method = "class", minsplit = 50)
+rpart.plot(fit.CART)
+```
+
+```{r}
+# in training set
+preds <- predict(fit.CART, type = "class")
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.CART, newdata = as.data.frame(as.matrix(new_testdoc)), type = "class")
+classification_report(testing_labels, preds)
+
+```
+
+### Performance of Random Forest
+
+Finally, we try training Random Forest classifier. Although, since CART did not perform well, it seems that Random Forest will fail too.
+
+```{r}
+fit.rf <- randomForest(x = as.matrix(new_traindoc), y = factor(training_labels))
+
+# accuracy in training set
+preds <- predict(fit.rf)
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.rf, newdata = as.matrix(new_testdoc))
+classification_report(testing_labels, preds)
+```
+
+## Using Latent Dirichlet Allocation
+
+```{r echo = FALSE, eval = FALSE}
+# this is just for convenience
+load('../datasets/US_president_ML_parts/train_test.Rdata')
+```
+
+
+Now, we shall be using Latent Dirichlet Allocation for topic modelling, which would give us a lower level representation of each documents, in different topics. We shall be using `topicmodels` package in R for this. However, in this case, we are going to convert our document term matrix into the `DocumentTermMatrix` class presented in `tidytext` package.
+
+```{r}
+library(topicmodels)
+train_doc <- traindata %>% cast_dtm(date, word, n)
+```
+
+```{r echo = TRUE, eval = FALSE}
+# set a seed so that the output of the model is predictable
+mod.lda <- LDA(train_doc, k = n_topic, control = list(seed = 1234, verbose = 1))
+```
+
+```{r echo = FALSE, eval = TRUE}
+# LDA takes time, so this is for speeding this up
+mod.lda <- readRDS('../datasets/US_president_ML_parts/LDA_traindoc.Rds')
+```
 
 
 
+Now, we find out the most important words related to each topics.
+
+```{r fig.width=10, fig.height=10}
+train_topics <- tidy(mod.lda, matrix = "beta")
+train_topics <- train_topics %>% group_by(topic) %>% top_n(10, beta) %>% ungroup() %>% arrange(topic, -beta)
+
+train_topics %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip() +
+  scale_x_reordered()
+
+```
+
+
+Now we obtain the posterior probabilities of the topics for each document in the training and testing set, and use these probabilities as our feature for the document.
+
+```{r}
+new_traindoc <- posterior(mod.lda)$topics
+
+# we add a dummy document containing all the words from training set
+testdata <- testdata %>% filter(word %in% colnames(train_doc)) %>% 
+  rbind( tibble(word = colnames(train_doc), date = NA, n = 0, tf = 0, idf = 0, tf_idf = 0, president = NA, party = NA) )
+  
+test_doc <- testdata %>% cast_dtm(date, word, n)
+test_doc <- test_doc[-nrow(test_doc), ]   # the last document is dummy one
+ 
+new_testdoc <- posterior(mod.lda, newdata = test_doc)$topics
+
+# finally add some column names
+colnames(new_traindoc) <- colnames(new_testdoc) <- paste("Topic", 1:n_topic)
+```
+
+Now, we are ready to apply our classification algorithms for one last time.
+
+### Performance of Linear Discriminant Analysis
+
+```{r}
+fit.LDA <- MASS::lda(new_traindoc, factor(training_labels))
+
+# in training set
+preds <- predict(fit.LDA, newdata = new_traindoc)
+classification_report(training_labels, preds$class)
+
+# in testing set
+preds <- predict(fit.LDA, newdata = new_testdoc)
+classification_report(testing_labels, preds$class)
+```
+
+### Performance of Naive Bayes Classifier
+
+```{r}
+fit.NB <- naiveBayes(x = as.matrix(new_traindoc), y = factor(training_labels))
+
+# in training set
+preds <- predict(fit.NB, newdata = as.matrix(new_traindoc))
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.NB, newdata = as.matrix(new_testdoc))
+classification_report(testing_labels, preds)
+```
+
+
+### Performance of Support Vector Machine
+
+We first use polynomial Kernels.
+
+```{r}
+fit.SVM.poly <- svm(x = as.matrix(new_traindoc), y = factor(training_labels), kernel = "polynomial", degree = 2)
+
+# in training set
+preds <- predict(fit.SVM.poly, newdata = as.matrix(new_traindoc))
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.SVM.poly, newdata = as.matrix(new_testdoc))
+classification_report(testing_labels, preds)
+```
+
+Next, we use SVM with Gaussian (or radial basis) kernel.
+
+```{r}
+fit.SVM.radial <- svm(x = as.matrix(new_traindoc), y = factor(training_labels), kernel = "radial", cost = 4)
+
+# in training set
+preds <- predict(fit.SVM.radial, newdata = as.matrix(new_traindoc))
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.SVM.radial, newdata = as.matrix(new_testdoc))
+classification_report(testing_labels, preds)
+```
+
+Finally, using Sigmoid kernel.
+
+```{r}
+fit.SVM.sigmoid <- svm(x = as.matrix(new_traindoc), y = factor(training_labels), kernel = "sigmoid", cost = 2)
+
+# in training set
+preds <- predict(fit.SVM.sigmoid, newdata = as.matrix(new_traindoc))
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.SVM.sigmoid, newdata = as.matrix(new_testdoc))
+classification_report(testing_labels, preds)
+```
+
+### Performance of CART
+
+Now, we use Classification And Regression Tree (CART). The fitted decision tree looks as follows.
+
+```{r fig.height = 10, fig.width=10}
+fit.CART <- rpart(LABEL ~ . , data = cbind(as.data.frame(as.matrix(new_traindoc)), LABEL = factor(training_labels)), 
+                  method = "class", minsplit = 100)
+rpart.plot(fit.CART)
+```
+
+```{r}
+# in training set
+preds <- predict(fit.CART, type = "class")
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.CART, newdata = as.data.frame(as.matrix(new_testdoc)), type = "class")
+classification_report(testing_labels, preds)
+
+```
+
+### Performance of Random Forest
+
+Finally, we try training Random Forest classifier. Although, since CART did not perform well, it seems that Random Forest will fail too.
+
+```{r}
+fit.rf <- randomForest(x = as.matrix(new_traindoc), y = factor(training_labels))
+
+# accuracy in training set
+preds <- predict(fit.rf)
+classification_report(training_labels, preds)
+
+# in testing set
+preds <- predict(fit.rf, newdata = as.matrix(new_testdoc))
+classification_report(testing_labels, preds)
+```
 
 
 
