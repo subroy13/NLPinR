@@ -462,11 +462,11 @@ To understand these features with the words, we link it using $\tilde{t}_i = \Si
 
 
 ```{r}
-n_topic <- 10
+n_topic <- 20
 lsa.fit <- svd(train_doc, nu = n_topic, nv = n_topic)  # obtain the SVD decomposition
 ```
 
-Before proceeding with the classification, let us see how these 10 topics are related with the terms. For this, we consider top 10 words with highest magnitude of coefficients in $V$ matrix, corresponding to each topic.
+Before proceeding with the classification, let us see how these $20$ topics are related with the terms. For this, we consider top 10 words with highest magnitude of coefficients in $V$ matrix, corresponding to each topic.
 
 ```{r}
 rownames(lsa.fit$v) <- colnames(train_doc)
@@ -638,9 +638,8 @@ mod.lda <- LDA(train_doc, k = n_topic, control = list(seed = 1234, verbose = 1))
 
 ```{r echo = FALSE, eval = TRUE}
 # LDA takes time, so this is for speeding this up
-mod.lda <- readRDS('../datasets/US_president_ML_parts/LDA_traindoc.Rds')
+mod.lda <- readRDS('../datasets/US_president_ML_parts/LDA_20.Rds')
 ```
-
 
 
 Now, we find out the most important words related to each topics.
@@ -789,6 +788,31 @@ classification_report(training_labels, preds)
 preds <- predict(fit.rf, newdata = as.matrix(new_testdoc))
 classification_report(testing_labels, preds)
 ```
+
+
+# Conclusion
+
+From the above empirical analysis, we can derive the following conclusions.
+
+1. The best performing classification rule is obtained using a Support Vector Machine with radial or gaussian basis kernel, in which case, the data has been preprocessed by Latent Dirichlet Allocation.
+
+2. In general, LSA and LDA dimensional reduction techniques make it easier for classification algorithms to run more smoothly and create better results.
+
+3. Based on the latent topics obtained by LSA and LDA, the topics seemed to related towards the following:
+
+    a. Addressing peace and unity, government treaties and foreign relations.
+    
+    b. Addressing issues like government, public relations, service, law and various reports.
+    
+    c. Adressing bank, money, currency, treasury and economic situations.
+    
+    d. Addressing issues like Soviet and Vietnam war.
+  
+4. Since the best performing classification rule is only $70\%$ accurate, which is not very satisfactory, it seems that it could really be difficult to classify the US presidents based on their speeches, to assign their philosophies into a republican or democratic ones. The topics in which Republican and Democratics generally disagree, they are obtained using the topic modelling to some great extent.
+
+
+
+
 
 
 
